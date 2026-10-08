@@ -66,6 +66,14 @@ class GGUFModelPatcher(comfy.model_patcher.ModelPatcher):
         else:
             comfy.utils.set_attr_param(self.model, key, out_weight)
 
+    def partially_unload(self, *args, **kwargs):
+        # A partially unloaded GGUF text encoder keeps holding VRAM the next model needs for on-the-fly
+        # dequantization and LoRA patching, which ComfyUI's estimate does not cover (FLUX 2 Q4_K_M with its
+        # Mistral GGUF fell into shared memory at 200-300 s/it). Freeing nothing here makes ComfyUI unload it fully.
+        if getattr(self, "gguf_full_unload", False):
+            return 0
+        return super().partially_unload(*args, **kwargs)
+
     def unpatch_model(self, device_to=None, unpatch_weights=True):
         if unpatch_weights:
             for p in self.model.parameters():
@@ -128,6 +136,7 @@ class GGUFModelPatcher(comfy.model_patcher.ModelPatcher):
         # GGUF specific clone values below
         n.patch_on_device = getattr(self, "patch_on_device", False)
         n.mmap_released = getattr(self, "mmap_released", False)
+        n.gguf_full_unload = getattr(self, "gguf_full_unload", False)
         if src_cls != GGUFModelPatcher:
             n.size = 0 # force recalc
         return n
@@ -243,6 +252,7 @@ class CLIPLoaderGGUF:
             embedding_directory = folder_paths.get_folder_paths("embeddings"),
         )
         clip.patcher = GGUFModelPatcher.clone(clip.patcher)
+        clip.patcher.gguf_full_unload = True
         return clip
 
     def load_clip(self, clip_name, type="stable_diffusion"):
