@@ -211,7 +211,17 @@ class GGMLLayer(torch.nn.Module):
         return weight, bias
 
     def forward_comfy_cast_weights(self, input, *args, **kwargs):
+        residual = residual_scale = None
         if self.is_ggml_quantized():
+            # ComfyUI's Linear forward (Comfy-Org/ComfyUI#16816) passes a fused input activation and a
+            # residual epilogue; apply them around the dequantized matmul the way comfy.ops.fp8_ops does.
+            input_act = kwargs.pop("input_act", None)
+            act_weight = kwargs.pop("act_weight", None)
+            act_eps = kwargs.pop("act_eps", 0.0)
+            residual = kwargs.pop("residual", None)
+            residual_scale = kwargs.pop("residual_scale", None)
+            if input_act is not None:
+                input = comfy.ops._eager_input_act(input, input_act, act_weight, act_eps)
             out = self.forward_ggml_cast_weights(input, *args, **kwargs)
         else:
             out = super().forward_comfy_cast_weights(input, *args, **kwargs)
@@ -219,6 +229,8 @@ class GGMLLayer(torch.nn.Module):
         # non-ggml forward might still propagate custom tensor class
         if isinstance(out, GGMLTensor):
             out = torch.Tensor(out)
+        if residual is not None:
+            out = comfy.ops._linear_residual(out, residual, residual_scale)
         return out
 
     def forward_ggml_cast_weights(self, input):
