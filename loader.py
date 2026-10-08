@@ -421,6 +421,9 @@ def gguf_tekken_tokenizer_loader(path, temb_shape):
                 "token_str": tok.decode("utf-8", errors="replace") # ?
             })
 
+    # ComfyUI's own tekken parser (comfy/text_encoders/bpe_tokenizer.py, August 2026) numbers the regular
+    # vocabulary after config["default_num_special_tokens"] ids; the GGUF lists the special tokens first.
+    data["config"]["default_num_special_tokens"] = len(data["special_tokens"])
     logging.info(f"Created tekken tokenizer with vocab size of {len(data['vocab'])} (+{len(data['special_tokens'])})")
     del reader
     return torch.ByteTensor(list(json.dumps(data).encode('utf-8')))
